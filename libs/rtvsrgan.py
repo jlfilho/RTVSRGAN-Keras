@@ -27,7 +27,7 @@ l2_reg = l2(1e-3)
 l1l2_reg = l1_l2(1e-3)
 
 
-class ESPCN():
+class RTVSRGAN():
     """
         height_lr: height of the lr image
         width_lr: width of the lr image 
@@ -63,7 +63,7 @@ class ESPCN():
         self.shape_lr = (self.height_lr, self.width_lr, self.channels)
         self.shape_hr = (self.height_hr, self.width_hr, self.channels)
 
-        self.loss =  L1L2EucliLoss #euclidean, charbonnier, mae,mse,L2Loss,L1Loss
+        self.loss = euclidean #euclidean, charbonnier, mae,mse,L2Loss,L1Loss,L1L2EucliLoss 
         self.lr = lr
 
         self.model = self.build_model()
@@ -88,7 +88,7 @@ class ESPCN():
         model.compile(
             loss=self.loss,
             optimizer=Adam(lr=self.lr,beta_1=0.9, beta_2=0.999), 
-            metrics=[psnr,L1Loss,L2Loss,euclidean,charbonnier]
+            metrics=[psnr,L1Loss,L2Loss]#,euclidean,charbonnier
         )
 
     def build_model(self):
@@ -120,6 +120,7 @@ class ESPCN():
                 kernel_initializer=VarianceScaling(scale=varscale, mode='fan_in', distribution='normal', seed=None),
                 padding = "same",activation='relu',name='conv_2')(x) 
         #x_start = Lambda(lambda x: x_start * 0.2)(x_start)
+        #x = Lambda(lambda x: x * 0.2)(x)
         #x = Add()([x, x_start])
         x = Concatenate()([x, x_start])        
         
@@ -134,6 +135,9 @@ class ESPCN():
         model = Model(inputs=inputs, outputs=x)
         model.summary()
         return model
+    
+
+    
 
    
     
@@ -148,7 +152,7 @@ class ESPCN():
             log_tensorboard_update_freq=10,
             workers=4,
             max_queue_size=5,
-            model_name='ESPCN',
+            model_name='RT-VSRGAN',
             datapath_train='../../../videos_harmonic/MYANMAR_2160p/train/',
             datapath_validation='../../../videos_harmonic/MYANMAR_2160p/validation/',
             datapath_test='../../../videos_harmonic/MYANMAR_2160p/test/',
@@ -299,7 +303,7 @@ class ESPCN():
 
 
 def parse_args():
-    parser = ArgumentParser(description='SR with model ESPCN')
+    parser = ArgumentParser(description='SR with model RT-VSRGAN')
 
     parser.add_argument(
         '-m', '--mode',
@@ -310,7 +314,7 @@ def parse_args():
 
     parser.add_argument(
         '-n', '--model_name',
-        type=str, default='ESPCN-v1',
+        type=str, default='RT-VSRGAN-v1',
         help='Name of the model.',
     )
 
@@ -337,15 +341,15 @@ def parse_args():
     return  parser.parse_args()
     
 
-# Run the ESPCN network
+# Run the RT-VSRGAN network
 if __name__ == "__main__":
 
     args = parse_args()
-    print(">> Creating the ESPCN network")
-    espcn = ESPCN(height_lr=64, width_lr=64,channels=3,lr=1e-3,upscaling_factor=args.upscaling_factor,colorspace = 'RGB') #YCbCr
+    print(">> Creating the RT-VSRGAN network")
+    rtvsrgan = RTVSRGAN(height_lr=64, width_lr=64,channels=3,lr=1e-3,upscaling_factor=args.upscaling_factor,colorspace = 'RGB') #YCbCr
 
     if (args.mode == 'train'):    
-        espcn.train(
+        rtvsrgan.train(
             epochs=args.epochs,
             batch_size=128,
             steps_per_epoch=10, #625
@@ -365,8 +369,8 @@ if __name__ == "__main__":
             log_test_path='../test/'
         )
     if (args.mode == 'test'):
-        # Instantiate the ESPCN object
-        espcn.load_weights(weights='../model/{}_{}X.h5'.format(args.model_name,args.upscaling_factor))
+        # Instantiate the RTVSRGAN object
+        rtvsrgan.load_weights(weights='../model/{}_{}X.h5'.format(args.model_name,args.upscaling_factor))
 
         datapath = '../../data/videoset/360p/' 
         outpath = '../out/360p_2X/'
@@ -375,7 +379,7 @@ if __name__ == "__main__":
             for filename in [f for f in sorted(filenames) if any(filetype in f.lower() for filetype in ['jpeg', 'png', 'jpg','mp4','264','webm','wma'])]:
                 if(i<2): 
                     print(os.path.join(dirpath, filename),outpath+filename.split('.')[0]+'.mp4')
-                    t = espcn.predict(
+                    t = rtvsrgan.predict(
                             lr_path=os.path.join(dirpath, filename), 
                             sr_path=outpath+filename.split('.')[0]+'.mp4',
                             print_frequency = True,
@@ -392,7 +396,7 @@ if __name__ == "__main__":
             for filename in [f for f in sorted(filenames) if any(filetype in f.lower() for filetype in ['jpeg', 'png', 'jpg','mp4','264','webm','wma'])]:
                 if(i<1):
                     print(os.path.join(dirpath, filename),outpath+filename.split('.')[0]+'.mp4')
-                    t = espcn.predict(
+                    t = rtvsrgan.predict(
                             lr_path=os.path.join(dirpath, filename), 
                             sr_path=outpath+filename.split('.')[0]+'.mp4',
                             print_frequency = True,

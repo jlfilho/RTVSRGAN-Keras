@@ -93,13 +93,22 @@ class VGGLoss(object):
         return (1. * K.mean(K.square(self.model(self.preprocess_vgg(y_true)) - self.model(self.preprocess_vgg(y_pred)))) + K.mean(K.square(y_pred - y_true), axis=None))
 
 
+# def unscale_hr_imgs(x):
+#     """Take a HR image [0, 1], convert to [0, 255]"""
+#     if isinstance(x, np.ndarray):
+#         return (x * 255)
+#     else:
+#         x = tf.keras.backend.cast(Lambda(lambda x: (x * 255))(x),'int32')            
+#         return tf.keras.backend.cast(x,'float32')
+
 def unscale_hr_imgs(x):
-    """Take a HR image [0, 1], convert to [0, 255]"""
+    """Take a HR image [-1, 1], convert to [0, 255]"""
     if isinstance(x, np.ndarray):
-        return (x * 255)
+        return ((x + 1) * 127.5) 
     else:
-        x = tf.keras.backend.cast(Lambda(lambda x: (x * 255))(x),'int32')            
+        x = tf.keras.backend.cast(Lambda(lambda x: ((x + 1) * 127.5))(x),'int32')            
         return tf.keras.backend.cast(x,'float32')
+
 
 def ssim(y_true, y_pred,max_val = 255.):
     return tf.image.ssim(unscale_hr_imgs(y_true), unscale_hr_imgs(y_pred), max_val)

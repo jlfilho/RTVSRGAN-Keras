@@ -83,18 +83,30 @@ class DataLoader(Sequence):
         """Un-Scale low-res images"""
         return imgs * 255
     
+    # @staticmethod
+    # def scale_hr_imgs(imgs):
+    #     """Scale high-res images prior to passing to SRGAN"""
+    #     #return imgs / 127.5 - 1
+    #     return imgs / 255.
+    
     @staticmethod
     def scale_hr_imgs(imgs):
         """Scale high-res images prior to passing to SRGAN"""
-        #return imgs / 127.5 - 1
-        return imgs / 255.
+        return imgs / 127.5 - 1
     
     @staticmethod
     def unscale_hr_imgs(imgs):
         """Un-Scale high-res images"""
-        imgs = imgs * 255.
-        imgs=np.clip(imgs, 0., 255.)
+        imgs = (imgs + 1.) * 127.5
+        imgs = np.clip(imgs, 0., 255.)        
         return imgs.astype('uint8')
+    
+    # @staticmethod
+    # def unscale_hr_imgs(imgs):
+    #     """Un-Scale high-res images"""
+    #     imgs = imgs * 255.
+    #     imgs=np.clip(imgs, 0., 255.)
+    #     return imgs.astype('uint8')
     
     def count_frames_manual(self,cap):
         count=0
@@ -331,7 +343,8 @@ class DataLoader(Sequence):
 
                     # For LR, do bicubic downsampling
                     lr_shape = (int(img_hr.shape[1]/self.scale), int(img_hr.shape[0]/self.scale))  
-                    img_lr = cv2.resize(cv2.GaussianBlur(img_hr,(9,9),0),lr_shape, interpolation = cv2.INTER_CUBIC)
+                    #img_lr = cv2.resize(cv2.GaussianBlur(img_hr,(9,9),0),lr_shape, interpolation = cv2.INTER_CUBIC)
+                    img_lr = cv2.resize(img_hr,lr_shape, interpolation = cv2.INTER_CUBIC)
                     
                     # Convert color space RGB to YCrCb
                     #img_lr = np.expand_dims(cv2.cvtColor(img_lr, cv2.COLOR_RGB2GRAY),axis=2) 
@@ -458,6 +471,6 @@ def plot_test_images(model, loader, datapath_test, test_output, epoch, name='SR_
             fig.savefig(savefile)
             plt.close()
             gc.collect()
-        print('psnr test espcn: {} bicubic: {}'.format(np.mean(espcn_psnr),np.mean(bi_psnr)))
+        print('test psnr {}: {} bicubic: {}'.format(name,np.mean(espcn_psnr),np.mean(bi_psnr)))
     except Exception as e:
         print(e)

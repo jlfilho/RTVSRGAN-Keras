@@ -13,25 +13,25 @@ import matplotlib.pyplot as plt
 # Import backend without the "Using X Backend" message
 from argparse import ArgumentParser
 from PIL import Image
-from libs.espcn import ESPCN
-from libs.util import plot_test_images, DataLoader
+from rtvsrgan import RTVSRGAN
+from util import plot_test_images, DataLoader
 from keras import backend as K
 
 
 # Sample call
 """
-# Train 2X ESPCN
-python3 train.py --train ../../data/train_large/ --validation ../data/val_large/ --test ../data/benchmarks/Set5/  --test_path ./test/ --scale 2 --stage default
+# Train 2X RTVSRGAN
+train.py -t ../../data/train_large/ -v ../data/val_large/ -te ../data/benchmarks/Set5/  -ltp ./test/ -sc 2 -s default -e 10000 -spe 1000 -pf 1 -ltuf 1
 
-# Train the 4X ESPCN
+# Train the 4X RTVSRGAN
 python3 train.py --train ../../data/train_large/ --validation ../data/val_large/ --test ../data/benchmarks/Set5/  --test_path ./test/ --scale 4 --scaleFrom 2 --stage default
 
-# Train the 8X ESPCN
+# Train the 8X RTVSRGAN
 python3 train.py --train ../../data/train_large/ --validation ../data/val_large/ --test ../data/benchmarks/Set5/  --test_path ./test/ --scale 8 --scaleFrom 4 --stage default
 """
 
 def parse_args():
-    parser = ArgumentParser(description='Training script for ESPCN')
+    parser = ArgumentParser(description='Training script for RTVSRGAN')
 
     parser.add_argument(
         '-s', '--stage',
@@ -84,8 +84,8 @@ def parse_args():
         
     parser.add_argument(
         '-mn', '--modelname',
-        type=str, default='ESPCN',
-        help='ESPCN'
+        type=str, default='RTVSRGAN',
+        help='RTVSRGAN'
     )
         
     parser.add_argument(
@@ -151,13 +151,13 @@ def parse_args():
 
     parser.add_argument(
         '-hlr', '--height_lr',
-        type=int, default=16,
+        type=int, default=64,
         help='height of lr crop'
     )
 
     parser.add_argument(
         '-wlr', '--width_lr',
-        type=int, default=16,
+        type=int, default=64,
         help='width of lr crop'
     )
 
@@ -194,7 +194,7 @@ def reset_layer_names(args):
 
     
     # Load previous model with weights, and re-save weights so that name ordering will match new model
-    prev_model = ESPCN(upscaling_factor=args.scaleFrom, channels=args.channels)
+    prev_model = RTVSRGAN(upscaling_factor=args.scaleFrom, channels=args.channels)
     prev_model.load_weights(BASE)
     prev_model.save_weights(args.weight_path+args.modelname)
     
@@ -204,23 +204,23 @@ def reset_layer_names(args):
     gc.collect()
     return BASE
 
-def model_freeze_layers(args, espcn):
+def model_freeze_layers(args, rtvsrgan):
     '''In case of transfer learning, this function freezes lower-level generator
     layers according to the scaleFrom argument, and recompiles the model so that
     only the top layer is trained'''
 
     trainable=False
-    for layer in espcn.model.layers:
+    for layer in rtvsrgan.model.layers:
         if layer.name == 'conv_3':
             trainable = True 
         layer.trainable = trainable
 
     # Compile generator with frozen layers
-    espcn.compile_model(espcn.model)
+    rtvsrgan.compile_model(rtvsrgan.model)
 
-def model_train(espcn, args, epochs):
-    '''Just a convenience function for training the ESPCN'''
-    espcn.train(
+def model_train(rtvsrgan, args, epochs):
+    '''Just a convenience function for training the RTVSRGAN'''
+    rtvsrgan.train(
         epochs=epochs, 
         **args
     )
@@ -262,7 +262,7 @@ if __name__ == '__main__':
     }
 
     # Generator weight paths
-    espcn_path = os.path.join(args.weight_path, args.modelname+'_'+str(args.scale)+'X.h5')
+    rtvsrgan_path = os.path.join(args.weight_path, args.modelname+'_'+str(args.scale)+'X.h5')
     
 
     ## FIRST STAGE: TRAINING GENERATOR ONLY WITH MSE LOSS
@@ -272,44 +272,44 @@ if __name__ == '__main__':
     # And load weights from lower-upscaling model    
     if args.stage in ['all', 'default']:
         if args.scaleFrom:
-            print(">> TRAIN DEFAULT MODEL ESPCN: scale {}X with transfer learning from {}X".format(args.scale,args.scaleFrom))
+            print(">> TRAIN DEFAULT MODEL RTVSRGAN: scale {}X with transfer learning from {}X".format(args.scale,args.scaleFrom))
 
             # Ensure proper layer names
             BASE = reset_layer_names(args)
 
             # Load scaleFrom model to get weights
-            modelFrom = ESPCN(upscaling_factor=args.scaleFrom, channels=args.channels)
+            modelFrom = RTVSRGAN(upscaling_factor=args.scaleFrom, channels=args.channels)
             modelFrom.load_weights(BASE)
             weights_list=modelFrom.model.get_weights()            
             
 
             # Load the properly named weights onto this model and freeze lower-level layers
-            espcn = ESPCN(lr=1e-3,**args_model)
+            rtvsrgan = RTVSRGAN(lr=1e-3,**args_model)
             
             # Load weights until layers 3
             print(">> Loading weights...")
-            espcn.model.set_weights(weights_list[0:4])
-            model_freeze_layers(args, espcn)
+            rtvsrgan.model.set_weights(weights_list[0:4])
+            model_freeze_layers(args, rtvsrgan)
             
-            model_train(espcn, args_train, epochs=3)
+            model_train(rtvsrgan, args_train, epochs=3)
 
             # Train entire generator for 3 epochs
-            espcn = ESPCN(lr=1e-3,**args_model)
-            espcn.load_weights(espcn_path)
-            model_train(espcn, args_train, epochs = 3)
+            rtvsrgan = RTVSRGAN(lr=1e-3,**args_model)
+            rtvsrgan.load_weights(rtvsrgan_path)
+            model_train(rtvsrgan, args_train, epochs = 3)
         
         else:
-            print(">> TRAIN DEFAULT MODEL ESPCN: scale {}X".format(args.scale))
+            print(">> TRAIN DEFAULT MODEL RTVSRGAN: scale {}X".format(args.scale))
             # As in paper - train for x epochs
-            espcn = ESPCN(lr=1e-3,**args_model) 
-            espcn.load_weights("./model/ESPCN_2X.h5")
-            model_train(espcn, args_train, epochs=args.epochs)
+            rtvsrgan = RTVSRGAN(lr=1e-3,**args_model) 
+            #rtvsrgan.load_weights("./model/RTVSRGAN_2X.h5")
+            model_train(rtvsrgan, args_train, epochs=args.epochs)
                
         
     # Re-initialize & fine-tune GAN - load generator & discriminator weights
     if args.stage in ['all', 'finetune']:
-        espcn = ESPCN(lr=1e-4,**args_model)
-        espcn.load_weights(espcn_path)
-        print("FINE TUNE ESPCN WITH LOW LEARNING RATE")
-        model_train(espcn, args_train, epochs=args.epochs)
+        rtvsrgan = RTVSRGAN(lr=1e-4,**args_model)
+        rtvsrgan.load_weights(rtvsrgan_path)
+        print("FINE TUNE RT-VSRGAN WITH LOW LEARNING RATE")
+        model_train(rtvsrgan, args_train, epochs=args.epochs)
         
