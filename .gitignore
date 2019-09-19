@@ -52,10 +52,10 @@ coverage.xml
 .mypy_cache/
 
 output/
-test/
+test/*.*
 validation/
 data/
 out/
-logs/
-model/
+logs/*.*
+model/*.*
 
