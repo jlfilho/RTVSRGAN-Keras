@@ -51,8 +51,8 @@ class VGGLossNoActivation(object):
             return Lambda(lambda x: preprocess_input(tf.add(x, 1) * 127.5))(x)
         
     # computes VGG loss or content loss
-    def mse_content_loss(self, y_true, y_pred):
-        return 1e-5 * K.mean(K.square(self.model(self.preprocess_vgg(y_true)) - self.model(self.preprocess_vgg(y_pred))),None)
+    def content_loss(self, y_true, y_pred):
+        return K.mean(K.square(self.model(self.preprocess_vgg(y_true)) - self.model(self.preprocess_vgg(y_pred))),None)
     
     def euclidean_content_loss(self, y_true, y_pred):
         return K.sqrt(K.sum(K.square(self.model(self.preprocess_vgg(y_true)) - self.model(self.preprocess_vgg(y_pred))), axis=None))
@@ -164,7 +164,8 @@ def kullback_leibler_divergence(y_true, y_pred):
     y_pred = K.clip(y_pred, K.epsilon(), 1)
     return K.sum(y_true * K.log(y_true / y_pred), axis=-1)
 
-
+def binary_crossentropy(y_true, y_pred):
+    return K.mean(K.binary_crossentropy(y_true, y_pred,from_logits=True), axis=-1)
 
 def euclidean_loss(y_true, y_pred):
     return  10e0 * K.sqrt(K.sum(K.square(y_pred - y_true), axis=None))

@@ -1,7 +1,6 @@
 #!/usr/bin/python3
 # encoding: utf-8
 
-
 import os
 import sys
 os.environ['CUDA_VISIBLE_DEVICES']='0' #Set a single gpu
@@ -14,7 +13,7 @@ import matplotlib.pyplot as plt
 # Import backend without the "Using X Backend" message
 from argparse import ArgumentParser
 from PIL import Image
-from libs.rtvsrgan import RTVSRGAN
+from rtvsrgan import RTVSRGAN
 from util import plot_test_images, DataLoader
 from keras import backend as K
 
@@ -22,13 +21,13 @@ from keras import backend as K
 # Sample call
 """
 # Train 2X RTVSRGAN
-python3 train.py -t ../../data/train_large/ -v ../data/val_large/ -te ../data/benchmarks/Set5/  -ltp ./test/ -sc 2 -e 10 -spe 50 -pf 1 -s quanti
+train.py -t ../../data/train_large/ -v ../data/val_large/ -te ../data/benchmarks/Set5/  -ltp ./test/ -sc 2 -s default -e 10000 -spe 1000 -pf 1 -ltuf 1
 
 # Train the 4X RTVSRGAN
-python3 train.py --train ../../data/train_large/ --validation ../data/val_large/ --test ../data/benchmarks/Set5/  --log_test_path ./test/ --scale 4 --scaleFrom 2 --stage all
+python3 train.py --train ../../data/train_large/ --validation ../data/val_large/ --test ../data/benchmarks/Set5/  --test_path ./test/ --scale 4 --scaleFrom 2 --stage default
 
 # Train the 8X RTVSRGAN
-python3 train.py --train ../../data/train_large/ --validation ../data/val_large/ --test ../data/benchmarks/Set5/  --log_test_path ./test/ --scale 8 --scaleFrom 4 --stage all
+python3 train.py --train ../../data/train_large/ --validation ../data/val_large/ --test ../data/benchmarks/Set5/  --test_path ./test/ --scale 8 --scaleFrom 4 --stage default
 """
 
 def parse_args():
@@ -36,21 +35,15 @@ def parse_args():
 
     parser.add_argument(
         '-s', '--stage',
-        type=str, default='all',
+        type=str, default='default',
         help='Which stage of training to run',
-        choices=['all', 'quanti', 'percept']
+        choices=['all', 'default', 'finetune']
     )
 
     parser.add_argument(
         '-e', '--epochs',
-        type=int, default=1000000,
+        type=int, default=100000,
         help='Number epochs per train'
-    )
-
-    parser.add_argument(
-        '-fe', '--first_epoch',
-        type=int, default=0,
-        help='Number of the first epoch to start in logs train'
     )
 
     parser.add_argument(
@@ -61,7 +54,7 @@ def parse_args():
 
     parser.add_argument(
         '-spe', '--steps_per_epoch',
-        type=int, default=2000,
+        type=int, default=1000,
         help='Steps per epoch'
     )
 
@@ -76,7 +69,7 @@ def parse_args():
         type=int, default=10,
         help='Steps per validation'
     )
-
+    
     parser.add_argument(
         '-te', '--test',
         type=str, default='../data/benchmarks/Set5/',
@@ -85,14 +78,20 @@ def parse_args():
 
     parser.add_argument(
         '-pf', '--print_frequency',
-        type=int, default=10,
+        type=int, default=100,
         help='Frequency of print test images'
+    )
+        
+    parser.add_argument(
+        '-mn', '--modelname',
+        type=str, default='RTVSRGAN',
+        help='RTVSRGAN'
     )
         
     parser.add_argument(
         '-sc', '--scale',
         type=int, default=2,
-        help='How much should we upscale images'
+        help='How much should we upscale images, e.g., 2, 4 or 8'
     )
 
     parser.add_argument(
@@ -109,13 +108,13 @@ def parse_args():
 
     parser.add_argument(
         '-mqs', '--max_queue_size',
-        type=int, default=100,
+        type=int, default=1000,
         help='Max queue size to workers'
     )
         
     parser.add_argument(
         '-bs', '--batch_size',
-        type=int, default=16,
+        type=int, default=128,
         help='What batch-size should we use'
     )
 
@@ -123,24 +122,12 @@ def parse_args():
         '-cpi', '--crops_per_image',
         type=int, default=4,
         help='Increase in order to reduce random reads on disk (in case of slower SDDs or HDDs)'
-    )
+    )           
         
     parser.add_argument(
         '-wp', '--weight_path',
         type=str, default='./model/',
         help='Where to output weights during training'
-    )
-
-    parser.add_argument(
-        '-lwf', '--log_weight_frequency',
-        type=int, default=1,
-        help='Where to output weights during training'
-    )
-
-    parser.add_argument(
-        '-ltf', '--log_test_frequency',
-        type=int, default=30,
-        help='Frequency to output test'
     )
 
     parser.add_argument(
@@ -160,6 +147,7 @@ def parse_args():
         type=str, default='./test/',
         help='Path to generate images in train'
     )
+
 
     parser.add_argument(
         '-hlr', '--height_lr',
@@ -185,18 +173,13 @@ def parse_args():
         help='Colorspace of images, e.g., RGB or YYCbCr'
     )
 
+
     parser.add_argument(
         '-mt', '--media_type',
         type=str, default='i',
         help='Type of media i to image or v to video'
     )
-
-    parser.add_argument(
-        '-mn', '--modelname',
-        type=str, default='_places365',
-        help='Name for the model'
-    )
-     
+        
     return  parser.parse_args()
 
 def reset_layer_names(args):
@@ -206,19 +189,20 @@ def reset_layer_names(args):
     loads the weights onto that network, and saves the weights again with proper names'''
 
     # Find lower-upscaling model results
-    BASE_G = os.path.join(args.weight_path, 'RTVSRGAN'+args.modelname+'_generator_'+str(args.scaleFrom)+'X.h5')
-    BASE_D = os.path.join(args.weight_path, 'RTVSRGAN'+args.modelname+'_discriminator_'+str(args.scaleFrom)+'X.h5')
-    assert os.path.isfile(BASE_G), 'Could not find '+BASE_G
-    assert os.path.isfile(BASE_D), 'Could not find '+BASE_D
+    BASE = os.path.join(args.weight_path, args.modelname+'_'+str(args.scaleFrom)+'X.h5')
+    assert os.path.isfile(BASE), 'Could not find '+BASE
+
     
     # Load previous model with weights, and re-save weights so that name ordering will match new model
-    prev_gan = RTVSRGAN(upscaling_factor=args.scaleFrom)
-    prev_gan.load_weights(BASE_G, BASE_D)
-    prev_gan.save_weights(args.weight_path+'RTVSRGAN{}'.format(args.modelname))
-    del prev_gan
+    prev_model = RTVSRGAN(upscaling_factor=args.scaleFrom, channels=args.channels)
+    prev_model.load_weights(BASE)
+    prev_model.save_weights(args.weight_path+args.modelname)
+    
+
+    #del prev_model
     K.reset_uids()
     gc.collect()
-    return BASE_G, BASE_D
+    return BASE
 
 def model_freeze_layers(args, rtvsrgan):
     '''In case of transfer learning, this function freezes lower-level generator
@@ -227,35 +211,21 @@ def model_freeze_layers(args, rtvsrgan):
 
     trainable=False
     for layer in rtvsrgan.model.layers:
-        if layer.name == 'conv_2':
+        if layer.name == 'conv_3':
             trainable = True 
         layer.trainable = trainable
 
     # Compile generator with frozen layers
     rtvsrgan.compile_model(rtvsrgan.model)
 
-
-def train_generator(args, gan, common, epochs=None):
-    '''Just a convenience function for training the GAN'''
-    gan.train_generator(
-        epochs=epochs,
-        modelname='SRResNet'+args.modelname,        
-        steps_per_epoch=args.steps_per_epoch,                
-        **common
+def model_train(rtvsrgan, args, epochs):
+    '''Just a convenience function for training the RTVSRGAN'''
+    rtvsrgan.train(
+        epochs=epochs, 
+        **args
     )
 
 
-def train_gan(args, gan, common, epochs=None):
-    '''Just a convenience function for training the GAN'''
-    
-    gan.train_rtvsrgan(
-        epochs=epochs,
-        modelname='RTVSRGAN'+args.modelname,    
-        log_weight_frequency=args.log_weight_frequency,
-        log_test_frequency=args.log_test_frequency,
-        first_epoch=args.first_epoch,
-        **common
-    )
 
 # Run script
 if __name__ == '__main__':
@@ -264,8 +234,10 @@ if __name__ == '__main__':
     args = parse_args()
        
     # Common settings for all training stages
-    args_train = { 
+    args_train = {
+        "model_name": args.modelname, 
         "batch_size": args.batch_size, 
+        "steps_per_epoch": args.steps_per_epoch,
         "steps_per_validation": args.steps_per_validation,
         "crops_per_image": args.crops_per_image,
         "print_frequency": args.print_frequency,
@@ -281,60 +253,63 @@ if __name__ == '__main__':
         "media_type": args.media_type
     }
 
-    # Specific of the model
     args_model = {
         "height_lr": args.height_lr, 
         "width_lr": args.width_lr, 
         "channels": args.channels,
         "upscaling_factor": args.scale, 
-        "colorspace": args.colorspace,        
+        "colorspace": args.colorspace        
     }
 
     # Generator weight paths
-    srresnet_path = os.path.join(args.weight_path, 'SRResNet{}_{}X.h5'.format(args.modelname,args.scale))
-    rtvsrgan_G_path = os.path.join(args.weight_path, 'RTVSRGAN{}_generator_{}X.h5'.format(args.modelname,args.scale))
-    rtvsrgan_D_path = os.path.join(args.weight_path, 'RTVSRGAN{}_discriminator_{}X.h5'.format(args.modelname,args.scale))
-    # Generator weight paths
+    rtvsrgan_path = os.path.join(args.weight_path, args.modelname+'_'+str(args.scale)+'X.h5')
     
+
     ## FIRST STAGE: TRAINING GENERATOR ONLY WITH MSE LOSS
     ######################################################
 
     # If we are doing transfer learning, only train top layer of the generator
     # And load weights from lower-upscaling model    
-    if args.stage in ['all', 'quanti']:
-                
+    if args.stage in ['all', 'default']:
         if args.scaleFrom:
-            print("TRANSFERING LEARN")
+            print(">> TRAIN DEFAULT MODEL RTVSRGAN: scale {}X with transfer learning from {}X".format(args.scale,args.scaleFrom))
+
             # Ensure proper layer names
-            BASE_G, BASE_D = reset_layer_names(args)
+            BASE = reset_layer_names(args)
+
+            # Load scaleFrom model to get weights
+            modelFrom = RTVSRGAN(upscaling_factor=args.scaleFrom, channels=args.channels)
+            modelFrom.load_weights(BASE)
+            weights_list=modelFrom.model.get_weights()            
+            
 
             # Load the properly named weights onto this model and freeze lower-level layers
-            gan = RTVSRGAN(gen_lr=1e-4, **args_model)
-                
-            gan.load_weights(BASE_G, BASE_D, by_name=True)
-            model_freeze_layers(args, gan)
-            train_generator(args, gan, args_train, epochs=3)
+            rtvsrgan = RTVSRGAN(lr=1e-3,**args_model)
+            
+            # Load weights until layers 3
+            print(">> Loading weights...")
+            rtvsrgan.model.set_weights(weights_list[0:4])
+            model_freeze_layers(args, rtvsrgan)
+            
+            model_train(rtvsrgan, args_train, epochs=3)
 
             # Train entire generator for 3 epochs
-            gan = RTVSRGAN(gen_lr=1e-4, **args_model)
-            gan.load_weights(srresnet_path)
-            train_generator(args, gan, args_train, epochs=3)
-        else: 
-            # As in paper - train for 10 epochs
-            gan = RTVSRGAN(gen_lr=2*1e-4, **args_model)
-            #gan.load_weights(srresnet_path)#Teste
-            print("TRAINING GENERATOR QUANTITATIVE-ORIENTED") 
-            train_generator(args, gan, args_train, epochs=args.epochs)        
-
-    ## SECOND STAGE: TRAINING GAN WITH HIGH LEARNING RATE
-    ######################################################
-
-    # Re-initialize & train the GAN - load just created generator weights
-    if args.stage in ['all', 'percept']:
-        print("TRAINING RTVSRGAN PERCEPTUAL-ORIENTED")
-        gan = RTVSRGAN(gen_lr=1e-4, dis_lr=1e-4, ra_lr = 1e-4, loss_weights=[1., 5e-3,1e-2],
-            **args_model)
-        gan.load_weights(srresnet_path)
-        #gan.load_weights(rtvsrgan_G_path, rtvsrgan_D_path)
-        #print("TRAINING RTVSRGAN WITH HIGH LEARNING RATE")
-        train_gan(args, gan, args_train, epochs= args.epochs//10 if args.epochs == int(4e5) else args.epochs)
+            rtvsrgan = RTVSRGAN(lr=1e-3,**args_model)
+            rtvsrgan.load_weights(rtvsrgan_path)
+            model_train(rtvsrgan, args_train, epochs = 3)
+        
+        else:
+            print(">> TRAIN DEFAULT MODEL RTVSRGAN: scale {}X".format(args.scale))
+            # As in paper - train for x epochs
+            rtvsrgan = RTVSRGAN(lr=1e-3,**args_model) 
+            #rtvsrgan.load_weights("./model/RTVSRGAN_2X.h5")
+            model_train(rtvsrgan, args_train, epochs=args.epochs)
+               
+        
+    # Re-initialize & fine-tune GAN - load generator & discriminator weights
+    if args.stage in ['all', 'finetune']:
+        rtvsrgan = RTVSRGAN(lr=1e-4,**args_model)
+        rtvsrgan.load_weights(rtvsrgan_path)
+        print("FINE TUNE RT-VSRGAN WITH LOW LEARNING RATE")
+        model_train(rtvsrgan, args_train, epochs=args.epochs)
+        
