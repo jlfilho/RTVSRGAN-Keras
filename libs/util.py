@@ -75,23 +75,20 @@ class DataLoader(Sequence):
 
     @staticmethod
     def scale_lr_imgs(imgs):
-        """Scale low-res images prior to passing to SRGAN"""
+        """Scale low-res images prior to passing to RTVSRGAN"""
         return imgs / 255.
     
     @staticmethod
     def unscale_lr_imgs(imgs):
         """Un-Scale low-res images"""
-        return imgs * 255
+        imgs = imgs * 255.
+        imgs = np.clip(imgs, 0., 255.)    
+        return imgs.astype(np.uint8) 
     
-    # @staticmethod
-    # def scale_hr_imgs(imgs):
-    #     """Scale high-res images prior to passing to SRGAN"""
-    #     #return imgs / 127.5 - 1
-    #     return imgs / 255.
     
     @staticmethod
     def scale_hr_imgs(imgs):
-        """Scale high-res images prior to passing to SRGAN"""
+        """Scale high-res images prior to passing to RTVSRGAN"""
         return imgs / 127.5 - 1
     
     @staticmethod
@@ -99,14 +96,8 @@ class DataLoader(Sequence):
         """Un-Scale high-res images"""
         imgs = (imgs + 1.) * 127.5
         imgs = np.clip(imgs, 0., 255.)        
-        return imgs.astype('uint8')
+        return imgs.astype(np.uint8)
     
-    # @staticmethod
-    # def unscale_hr_imgs(imgs):
-    #     """Un-Scale high-res images"""
-    #     imgs = imgs * 255.
-    #     imgs=np.clip(imgs, 0., 255.)
-    #     return imgs.astype('uint8')
     
     def count_frames_manual(self,cap):
         count=0
@@ -343,8 +334,8 @@ class DataLoader(Sequence):
 
                     # For LR, do bicubic downsampling
                     lr_shape = (int(img_hr.shape[1]/self.scale), int(img_hr.shape[0]/self.scale))  
-                    #img_lr = cv2.resize(cv2.GaussianBlur(img_hr,(9,9),0),lr_shape, interpolation = cv2.INTER_CUBIC)
-                    img_lr = cv2.resize(img_hr,lr_shape, interpolation = cv2.INTER_CUBIC)
+                    img_lr = cv2.resize(cv2.GaussianBlur(img_hr,(5,5),0),lr_shape, interpolation = cv2.INTER_CUBIC)
+                    #img_lr = cv2.resize(img_hr,lr_shape, interpolation = cv2.INTER_CUBIC)
                     
                     # Convert color space RGB to YCrCb
                     #img_lr = np.expand_dims(cv2.cvtColor(img_lr, cv2.COLOR_RGB2GRAY),axis=2) 
@@ -418,10 +409,10 @@ def plot_test_images(model, loader, datapath_test, test_output, epoch, name='SR_
             imgs_hr = [loader.unscale_hr_imgs(img[:,:,0]).astype(np.uint8) for img in imgs_hr]
             imgs_sr = [loader.unscale_hr_imgs(img[:,:,0]).astype(np.uint8) for img in imgs_sr]
         else:
-            if(colorspace == 'YCbCr'):
-                imgs_lr = [cv2.cvtColor(loader.unscale_lr_imgs(img).astype(np.uint8), cv2.COLOR_YCrCb2BGR) for img in imgs_lr]
-                imgs_hr = [cv2.cvtColor(loader.unscale_hr_imgs(img).astype(np.uint8), cv2.COLOR_YCrCb2BGR) for img in imgs_hr]
-                imgs_sr = [cv2.cvtColor(loader.unscale_hr_imgs(img).astype(np.uint8), cv2.COLOR_YCrCb2BGR) for img in imgs_sr]
+            if(colorspace == 'YCrCb'):
+                imgs_lr = [cv2.cvtColor(loader.unscale_lr_imgs(img).astype(np.uint8), cv2.COLOR_YCrCb2RGB) for img in imgs_lr]
+                imgs_hr = [cv2.cvtColor(loader.unscale_hr_imgs(img).astype(np.uint8), cv2.COLOR_YCrCb2RGB) for img in imgs_hr]
+                imgs_sr = [cv2.cvtColor(loader.unscale_hr_imgs(img).astype(np.uint8), cv2.COLOR_YCrCb2RGB) for img in imgs_sr]
                 
             else:
                 imgs_lr = [loader.unscale_lr_imgs(img).astype(np.uint8) for img in imgs_lr]

@@ -58,4 +58,5 @@ data/
 out/
 logs/*/*.*
 model/*/*.*
-
+model_/
+logs_/

@@ -32,7 +32,7 @@ from util import DataLoader, plot_test_images
 from losses import psnr3 as psnr
 from losses import binary_crossentropy
 from losses import VGGLossNoActivation as VGGLoss
-from losses import euclidean, charbonnier, cosine,mape,mae,mse,L2Loss,L1Loss,L1L2EucliLoss
+from losses import euclidean, charbonnier, cosine,mape,mae,mse,L2Loss,L1Loss
 
 
 l1_reg = l1(1e-3)
@@ -43,7 +43,6 @@ l1l2_reg = l1_l2(1e-3)
 class RTVSRGAN():
     """ 
     Implementation of RTVSRGAN:
-
     """
     
     def __init__(self,
@@ -71,7 +70,7 @@ class RTVSRGAN():
         self.training_mode = training_mode
 
         # High-resolution image dimensions
-        if upscaling_factor not in [2, 4, 8]:
+        if upscaling_factor not in [2,3, 4, 8]:
             raise ValueError(
                 'Upscaling factor must be either 2, 4, or 8. You chose {}'.format(upscaling_factor))
         self.upscaling_factor = upscaling_factor
@@ -94,7 +93,7 @@ class RTVSRGAN():
         self.loss_weights=loss_weights
         self.VGGLoss = VGGLoss(self.shape_hr)
         self.gen_loss =  euclidean #euclidean, charbonnier, mae,mse,L2Loss,L1Loss,L1L2EucliLoss 
-        self.content_loss = self.VGGLoss.content_loss 
+        self.content_loss = L1Loss #self.VGGLoss.content_loss 
         self.adversarial_loss = binary_crossentropy
         self.ra_loss = binary_crossentropy
 
@@ -147,24 +146,30 @@ class RTVSRGAN():
 
         inputs = Input(shape=(None, None, self.channels),name='input_1')
 
-        x = Conv2D(filters = 64, kernel_size = (3,3), strides=1, #kernel_regularizer=l2_reg, 
+        x = Conv2D(filters = 32, kernel_size = (3,3), strides=1, #kernel_regularizer=l2_reg, 
                 kernel_initializer=VarianceScaling(scale=varscale, mode='fan_in', distribution='normal', seed=None),
-                padding = "same",name='conv_1')(inputs) #activation='relu', 
-        x = PReLU(shared_axes=[1,2])(x)
-        x_start = x
+                padding = "same",name='conv_1')(inputs) 
+        x = LeakyReLU(0.2)(x) 
+        x1 = x
 
         x = Conv2D(filters = 32, kernel_size = (3,3), strides=1, #kernel_regularizer=l2_reg, 
                 kernel_initializer=VarianceScaling(scale=varscale, mode='fan_in', distribution='normal', seed=None),
-                padding = "same",name='conv_2')(x) #activation='relu',
-        x = PReLU(shared_axes=[1,2])(x)
-        #x_start = Lambda(lambda x: x_start * 0.2)(x_start)
-        #x = Lambda(lambda x: x * 0.2)(x)
-        #x = Add()([x, x_start])
-        x = Concatenate()([x, x_start])        
+                padding = "same",name='conv_2')(x) 
+        x2 = LeakyReLU(0.2)(x)
+        x = Concatenate()([x1, x2])
+
+        x = Conv2D(filters = 32, kernel_size = (3,3), strides=1, #kernel_regularizer=l2_reg, 
+                kernel_initializer=VarianceScaling(scale=varscale, mode='fan_in', distribution='normal', seed=None),
+                padding = "same",name='conv_3')(x) 
+        x = LeakyReLU(0.2)(x)
+
+        x = Lambda(lambda x: x * 0.2)(x)
+        x = Concatenate()([x1, x2,x])
+
         
         x = Conv2D(filters = self.upscaling_factor**2*self.channels, kernel_size = (3,3), strides=1, #kernel_regularizer=l2_reg, 
                 kernel_initializer=VarianceScaling(scale=varscale, mode='fan_in', distribution='normal', seed=None),
-                padding = "same", name='conv_3')(x) 
+                padding = "same", name='conv_4')(x) 
         
         x = SubpixelConv2D(scale=self.upscaling_factor,name='subpixel_')(x)
 
@@ -177,7 +182,6 @@ class RTVSRGAN():
     def build_discriminator(self, filters=64):
         """
         Build the discriminator network according to description in the paper.
-
         :param optimizer: Keras optimizer to use for network
         :param int filters: How many filters to use in first conv layer
         :return: the compiled model
@@ -406,7 +410,7 @@ class RTVSRGAN():
                 return lr * factor
             return lr
         lr_scheduler = LearningRateScheduler(lr_scheduler, verbose=1)
-        callbacks.append(lr_scheduler)
+        #callbacks.append(lr_scheduler)
 
   
         # Callback: test images plotting
@@ -471,7 +475,6 @@ class RTVSRGAN():
         media_type='i'        
     ):
         """Train the ESRGAN network
-
         :param int epochs: how many epochs to train the network for
         :param str modelname: name to use for storing model weights etc.
         :param str datapath_train: path for the image files to use for training
@@ -530,6 +533,18 @@ class RTVSRGAN():
         )
         enqueuer.start(workers=workers, max_queue_size=max_queue_size)
         output_generator = enqueuer.get()
+
+
+        # Callback: save weights after each epoch
+        modelcheckpoint = ModelCheckpoint(
+            os.path.join(log_weight_path, modelname + '2_{}X.h5'.format(self.upscaling_factor)), 
+            monitor='Perceptual_loss', 
+            save_best_only=True, 
+            save_weights_only=True,
+            mode='min',
+            verbose=1
+        )
+        modelcheckpoint.set_model(self.generator)
         
         # Callback: tensorboard
         if log_tensorboard_path:
@@ -548,7 +563,7 @@ class RTVSRGAN():
         # Learning rate scheduler
         def lr_scheduler(epoch, lr):
             factor = 0.5
-            decay_step =  [50000,100000,200000,300000]  
+            decay_step =  [500,1000,1500,2000]  
             if epoch in decay_step and epoch:
                 return lr * factor
             return lr
@@ -586,7 +601,6 @@ class RTVSRGAN():
         
         # Random images to go through
         #idxs = np.random.randint(0, len(train_loader), epochs)        
-        
         # Loop through epochs / iterations
         for epoch in range(first_epoch, int(epochs)+first_epoch):
             lr_scheduler_gan.on_epoch_begin(epoch)
@@ -623,6 +637,19 @@ class RTVSRGAN():
             # Callbacks
             logs = named_logs(self.rtvsrgan, gan_loss)
             tensorboard.on_epoch_end(epoch, logs)
+
+            
+            # Callbacks
+            if datapath_validation:
+                validation_losses = self.generator.evaluate_generator(
+                    validation_loader,
+                    steps=steps_per_validation,
+                    use_multiprocessing=False,#workers>1,
+                    workers=1
+                )
+                #logs = named_logs(self.generator, validation_losses)
+                modelcheckpoint.on_epoch_end(epoch, logs)
+                
             
 
             # Save losses            
@@ -642,12 +669,6 @@ class RTVSRGAN():
 
                 # Run validation inference if specified
                 if datapath_validation:
-                    validation_losses = self.generator.evaluate_generator(
-                        validation_loader,
-                        steps=steps_per_validation,
-                        use_multiprocessing=False,#workers>1,
-                        workers=1
-                    )
                     print(">> Validation Losses: {}".format(
                         ", ".join(["{}={:.4f}".format(k, v) for k, v in zip(self.generator.metrics_names, validation_losses)])
                     ))                
@@ -795,11 +816,3 @@ if __name__ == "__main__":
                             gpu=True
                     )
                 i+=1
-
-
-    
-
-    
-
- 
-

@@ -51,7 +51,6 @@ def selectBetterBitrate(height, fps):
     print(">> BITRATE: ",bitrate)
     return bitrate
 
-
 def scale_lr_imgs(imgs):
     """Scale low-res images prior to passing to ESRGAN"""
     return imgs / 255.
@@ -62,13 +61,11 @@ def unscale_hr_imgs(imgs):
     imgs = np.clip(imgs, 0., 255.)
     return imgs.astype('uint8') 
 
-
 def downsample(img_hr,scale):
     lr_shape = (int(img_hr.shape[1]/scale), int(img_hr.shape[0]/scale))  
     img_lr = cv2.resize(cv2.GaussianBlur(img_hr,(5,5),0),lr_shape, interpolation = cv2.INTER_CUBIC)
+    #img_lr = cv2.resize(cv2.GaussianBlur(img_hr,(9,9),0),lr_shape, interpolation = cv2.INTER_CUBIC)
     return img_lr
-
-    
 
 def sr_genarator(model,img_lr,scale):
     """Predict sr frame given a LR frame"""
@@ -96,27 +93,28 @@ def write_srvideo(model=None,lr_videopath=None,sr_videopath=None,scale=None,prin
     outputdict={'-vcodec': codec, '-r': _fps, '-crf': str(crf), '-pix_fmt': 'yuv420p',
                 '-b:v': selectBetterBitrate(height*scale,int(_fps.split('/')[0])/int(_fps.split('/')[1]))})
     count = 0
-    time_elapsed = []
+    time_elapsed = 0
     print(">> Writing video...")
     for frame in tqdm(videogen):
-        #frame = downsample(frame,scale)
+        frame = downsample(frame,scale)
         start = timer()
         img_sr = sr_genarator(model,frame,scale=scale)
         writer.writeFrame(img_sr)
         end = timer()
-        time_elapsed.append(end - start)
+        elapsed = end - start
+        time_elapsed +=(elapsed)
         count +=1
         if (print_frequency): 
             if(count % print_frequency == 0):
                 print("")
-                #print('... Time per Frame: '+str(np.mean(time_elapsed))+'s')
-                print('... FPS: '+str(1/np.mean(time_elapsed)))
+                print('... Time per Frame: '+str(elapsed)+'s')
+                print('... FPS: '+str(1./elapsed))
                 #print('... Estimated time: '+str(np.mean(time_elapsed)*(t_frames-count)/60.)+'min')
     writer.close()
     videogen = skvideo.io.FFmpegReader(sr_videopath)
     print(">> Outputshape: ",videogen.getShape())
-    print('>> Video resized in '+str(np.sum(time_elapsed))+'s')
-    print('>> Average FTP '+str(t_frames/np.sum(time_elapsed)))
+    print('>> Video resized in '+str(time_elapsed)+'s')
+    print('>> Average FTP '+str(count/time_elapsed))
     return time_elapsed
 
 

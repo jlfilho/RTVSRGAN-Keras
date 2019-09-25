@@ -52,13 +52,13 @@ class VGGLossNoActivation(object):
         
     # computes VGG loss or content loss
     def content_loss(self, y_true, y_pred):
-        return K.mean(K.square(self.model(self.preprocess_vgg(y_true)) - self.model(self.preprocess_vgg(y_pred))),None)
+        return 10e-2 * K.mean(K.square(self.model(self.preprocess_vgg(y_true)) - self.model(self.preprocess_vgg(y_pred))),None)
     
     def euclidean_content_loss(self, y_true, y_pred):
         return K.sqrt(K.sum(K.square(self.model(self.preprocess_vgg(y_true)) - self.model(self.preprocess_vgg(y_pred))), axis=None))
     
-    def plus_content_loss(self, y_true, y_pred):
-        return (1e-5 * K.mean(K.square(self.model(self.preprocess_vgg(y_true)) - self.model(self.preprocess_vgg(y_pred))),None) + K.mean(K.square(y_pred - y_true), axis=None))
+    def compoundLoss(self, y_true, y_pred,alfa=10e-2,beta=10e0):
+        return (alfa * K.mean(K.square(self.model(self.preprocess_vgg(y_true)) - self.model(self.preprocess_vgg(y_pred))),None) + beta * K.sqrt(K.sum(K.square(y_pred - y_true), axis=None)))
 
 
 
@@ -168,13 +168,13 @@ def binary_crossentropy(y_true, y_pred):
     return K.mean(K.binary_crossentropy(y_true, y_pred,from_logits=True), axis=-1)
 
 def euclidean_loss(y_true, y_pred):
-    return  10e0 * K.sqrt(K.sum(K.square(y_pred - y_true), axis=None))
+    return  K.sqrt(K.sum(K.square(y_pred - y_true), axis=None))
 
 def L1Loss(y_true, y_pred):
-    return 10e-3 * K.sum(K.abs(y_pred - y_true), None)
+    return  K.sum(K.abs(y_pred - y_true), None)
 
 def L2Loss(y_true, y_pred):
-    return 10e-3 * K.sum(K.square(y_pred - y_true),axis=None)
+    return K.sum(K.square(y_pred - y_true),axis=None)
 
 
 
@@ -185,8 +185,8 @@ def charbonnier(y_true, y_pred):
     p = K.sqrt(K.square(error) + K.square(epsilon))
     return K.mean(p)
 
-def L1L2EucliLoss(y_true, y_pred):
-    return  L1Loss(y_true, y_pred) +  L2Loss(y_true, y_pred) +  euclidean_loss(y_true, y_pred) + charbonnier(y_true, y_pred)
+def compoundLoss(y_true, y_pred,alfa=10e0,beta=10e0):
+    return  alfa * mean_squared_logarithmic_error(y_true, y_pred)  + beta * euclidean_loss(y_true, y_pred) 
 
 class UpSamplingBi():
 
